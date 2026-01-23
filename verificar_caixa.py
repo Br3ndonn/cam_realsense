@@ -17,7 +17,7 @@ def rastrear_cacamba_hostil():
     pipeline = rs.pipeline()
     config = rs.config()
 
-    # MUDANÇA 1: Não usamos mais .color. Usamos Infravermelho (IR) e Profundidade.
+    # Usamos Infravermelho (IR) e Profundidade.
     # O IR funciona no escuro total graças ao projetor laser da câmera.
     config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
     config.enable_stream(rs.stream.infrared, 1, 640, 480, rs.format.y8, 30)
