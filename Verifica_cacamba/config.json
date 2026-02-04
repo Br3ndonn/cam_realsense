@@ -1,0 +1,52 @@
+{
+  "camera": {
+    "resolucao_largura": 640,
+    "resolucao_altura": 480,
+    "fps": 30,
+    "clip_min": 0.1,
+    "clip_max": 2.0,
+    "laser_potencia": 360
+  },
+  "medicoes": {
+    "altura_camera_chao": 0.725,
+    "altura_caixa": 0.20,
+    "profundidade_min_caixa": 0.45,
+    "profundidade_max_caixa": 0.85,
+    "area_minima_pixels": 5000
+  },
+  "protecao_pessoa": {
+    "profundidade_minima_corpo": 0.20,
+    "area_maxima_corpo": 200000,
+    "velocidade_max_mudanca": 0.05,
+    "tempo_minimo_entre_mudancas": 1.0
+  },
+  "roi": {
+    "x_min": 0.25,
+    "x_max": 0.75,
+    "y_min": 0.25,
+    "y_max": 0.85
+  },
+  "thresholds": {
+    "limite_vazia": 0.70,
+    "limite_cheia": 0.55,
+    "threshold_binary": 127
+  },
+  "filtros": {
+    "tamanho_historico": 10,
+    "historico_distancias": 30,
+    "kernel_morph_size": 5,
+    "grid_medicao_size": 3
+  },
+  "visualizacao": {
+    "mostrar_fps": true,
+    "mostrar_grid": true,
+    "mostrar_ir": true,
+    "colormap": 2
+  },
+  "sons": {
+    "beep_mudanca_status": true,
+    "beep_frequencia": 1000,
+    "beep_duracao": 200
+  }
+}
+

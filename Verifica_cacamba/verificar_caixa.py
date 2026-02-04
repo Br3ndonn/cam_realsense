@@ -4,14 +4,24 @@ import cv2
 
 
 def rastrear_cacamba_hostil():
-    # --- CONFIGURAÇÕES ---
-    AREA_MINIMA = 10000
-    ALTURA_BORDA_CAMINHAO = 3.5
+    # --- CONFIGURAÇÕES PARA TESTE COM CAIXA DE ISOPOR ---
+    # Caixa: 20cm de altura
+    # Câmera: 72.5cm (0.725m) do chão
+
+    AREA_MINIMA = 5000  # Reduzido para detectar caixa menor
+
+    # Distâncias de referência (em metros)
+    ALTURA_CAMERA_CHAO = 0.725  # 72.5cm
+    ALTURA_CAIXA = 0.20  # 20cm
+    ALTURA_BORDA_CAIXA = ALTURA_CAMERA_CHAO - ALTURA_CAIXA  # 0.525m até a borda
+    ALTURA_FUNDO_CAIXA = ALTURA_CAMERA_CHAO  # 0.725m até o fundo da caixa
+
+    # Tolerância para detecção (em metros)
+    TOLERANCIA = 0.03  # 3cm de margem
 
     # Filtro de Distância (Min/Max em metros)
-    # Ignora poeira colada na lente (< 0.5m) e fundo infinito (> 6m)
-    CLIP_MIN = 0.5
-    CLIP_MAX = 6.0
+    CLIP_MIN = 0.3  # Reduzido para detectar objetos mais próximos
+    CLIP_MAX = 1.5  # Ajustado para o ambiente de teste
 
     # --- INICIALIZAÇÃO DA REALSENSE ---
     pipeline = rs.pipeline()
@@ -112,8 +122,8 @@ def rastrear_cacamba_hostil():
                             melhor_retangulo = approx
 
             # --- ANÁLISE DE PROFUNDIDADE ---
-            status = "AGUARDANDO CAMINHAO..."
-            cor_status = (0, 0, 255)  # Vermelho
+            status = "AGUARDANDO CAIXA..."
+            cor_status = (128, 128, 128)  # Cinza
 
             if melhor_retangulo is not None:
                 cv2.drawContours(display_image, [melhor_retangulo], -1, (0, 255, 255), 2)
@@ -143,35 +153,57 @@ def rastrear_cacamba_hostil():
                         # Usamos a mediana para evitar outliers (picos de poeira)
                         distancia_mediana = np.median(distancias_reais)
 
-                        if distancia_mediana < ALTURA_BORDA_CAMINHAO:
-                            status = "CARGA DETECTADA"
+                        # Calcular a altura do conteúdo dentro da caixa
+                        altura_conteudo = ALTURA_FUNDO_CAIXA - distancia_mediana
+                        percentual_cheio = (altura_conteudo / ALTURA_CAIXA) * 100
+
+                        # Limitar percentual entre 0 e 100
+                        if percentual_cheio < 0:
+                            percentual_cheio = 0
+                        elif percentual_cheio > 100:
+                            percentual_cheio = 100
+
+                        # Classificar estado da caixa
+                        if distancia_mediana >= (ALTURA_FUNDO_CAIXA - TOLERANCIA):
+                            # Distância próxima ao fundo = caixa vazia
+                            status = "CAIXA VAZIA"
+                            cor_status = (0, 0, 255)  # Vermelho
+                            texto_info = f"Vazia | Dist: {distancia_mediana:.3f}m"
+
+                        elif distancia_mediana <= (ALTURA_BORDA_CAIXA + TOLERANCIA):
+                            # Objeto até a borda ou acima
+                            status = "CAIXA CHEIA"
                             cor_status = (0, 255, 0)  # Verde
+                            texto_info = f"Cheia {percentual_cheio:.0f}% | Alt: {altura_conteudo*100:.1f}cm"
 
-                            # Cálculo de % de enchimento (estimativa simples)
-                            # Assumindo que o chão da caçamba está a 4.0m e a borda a 3.5m
-                            # E a carga sobe até 2.0m
-                            # Isso é apenas um exemplo, você deve calibrar com seu caminhão real
-                            chao_cacamba = 4.0
-                            altura_carga = chao_cacamba - distancia_mediana
-                            if altura_carga < 0: altura_carga = 0
-
-                            texto_info = f"Altura Carga: {altura_carga:.2f}m"
                         else:
-                            status = "CACAMBA VAZIA"
+                            # Objeto no meio da caixa
+                            status = "PARCIALMENTE CHEIA"
                             cor_status = (0, 165, 255)  # Laranja
-                            texto_info = f"Profundidade: {distancia_mediana:.2f}m"
+                            texto_info = f"Parcial {percentual_cheio:.0f}% | Alt: {altura_conteudo*100:.1f}cm"
 
-                        # Desenhar texto
+                        # Desenhar texto com informações detalhadas
                         x, y, w, h = cv2.boundingRect(melhor_retangulo)
                         cv2.putText(display_image, texto_info, (x, y + h + 25),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, cor_status, 2)
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, cor_status, 2)
+
+                        # Informação adicional de debug
+                        texto_debug = f"Medida: {distancia_mediana:.3f}m | Fundo: {ALTURA_FUNDO_CAIXA:.3f}m | Borda: {ALTURA_BORDA_CAIXA:.3f}m"
+                        cv2.putText(display_image, texto_debug, (x, y + h + 50),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
 
             # --- EXIBIÇÃO ---
-            cv2.putText(display_image, f"MODO IR - {status}", (20, 50),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, cor_status, 2)
+            # Informações no topo da tela
+            cv2.rectangle(display_image, (0, 0), (640, 100), (0, 0, 0), -1)
+            cv2.putText(display_image, f"MODO IR - {status}", (20, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, cor_status, 2)
+            cv2.putText(display_image, f"Camera: {ALTURA_CAMERA_CHAO*100:.1f}cm | Caixa: {ALTURA_CAIXA*100:.0f}cm",
+                        (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(display_image, "Pressione 'q' para sair",
+                        (20, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
 
             # Mostra a visão do sensor IR (que vê no escuro)
-            cv2.imshow('Monitoramento Noturno/Poeira', display_image)
+            cv2.imshow('Monitor Deteccao Caixa', display_image)
 
             # Opcional: ver o mapa de calor da profundidade filtrada
             depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
