@@ -3,23 +3,23 @@ import numpy as np
 import cv2
 
 
-def verificar_caixa_por_altura():
+def verificar_cacamba_por_altura():
     """
-    Algoritmo simplificado que verifica se a caixa está cheia ou vazia
+    Algoritmo simplificado que verifica se a cacamba está cheia ou vazia
     baseado APENAS na medição de altura (distância da câmera até a superfície).
 
     Configuração do teste:
-    - Caixa de isopor: 20cm de altura
-    - Câmera: 72.5cm do chão (posicionada acima da caixa)
+    - Cacamba de isopor: 20cm de altura
+    - Câmera: 72.5cm do chão (posicionada acima da cacamba)
     """
 
     # --- CONFIGURAÇÕES ---
     ALTURA_CAMERA_CHAO = 0.725  # 72.5cm em metros
-    ALTURA_CAIXA = 0.20  # 20cm em metros
+    ALTURA_CACAMBA = 0.20  # 20cm em metros
 
     # Distâncias de referência calculadas
     DISTANCIA_FUNDO_VAZIO = ALTURA_CAMERA_CHAO  # 0.725m quando vazia (vê o fundo)
-    DISTANCIA_BORDA_CHEIA = ALTURA_CAMERA_CHAO - ALTURA_CAIXA  # 0.525m quando cheia até a borda
+    DISTANCIA_BORDA_CHEIA = ALTURA_CAMERA_CHAO - ALTURA_CACAMBA  # 0.525m quando cheia até a borda
 
     # Tolerância para flutuações na medição (3cm)
     TOLERANCIA = 0.03
@@ -28,8 +28,8 @@ def verificar_caixa_por_altura():
     LIMITE_VAZIA = DISTANCIA_FUNDO_VAZIO - TOLERANCIA  # >= 0.695m = vazia
     LIMITE_CHEIA = DISTANCIA_BORDA_CHEIA + TOLERANCIA  # <= 0.555m = cheia
 
-    # Configurações para detecção automática da caixa
-    AREA_MINIMA_CAIXA = 3000  # Área mínima em pixels para considerar um contorno válido
+    # Configurações para detecção automática da cacamba
+    AREA_MINIMA_CACAMBA = 3000  # Área mínima em pixels para considerar um contorno válido
     TAMANHO_KERNEL_BLUR = 7  # Tamanho do kernel para suavização
 
     # --- INICIALIZAÇÃO DA REALSENSE ---
@@ -41,10 +41,10 @@ def verificar_caixa_por_altura():
     config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
 
     print("="*70)
-    print("SISTEMA DE DETECÇÃO DE NÍVEL DA CAIXA")
+    print("SISTEMA DE DETECÇÃO DE NÍVEL DA CACAMBA")
     print("="*70)
     print(f"Altura da câmera: {ALTURA_CAMERA_CHAO*100:.1f}cm")
-    print(f"Altura da caixa: {ALTURA_CAIXA*100:.0f}cm")
+    print(f"Altura da cacamba: {ALTURA_CACAMBA*100:.0f}cm")
     print(f"Distância esperada (vazia): ~{DISTANCIA_FUNDO_VAZIO:.3f}m")
     print(f"Distância esperada (cheia): ~{DISTANCIA_BORDA_CHEIA:.3f}m")
     print(f"Limite vazia: >= {LIMITE_VAZIA:.3f}m")
@@ -70,7 +70,7 @@ def verificar_caixa_por_altura():
     temporal = rs.temporal_filter()
 
     print("\n✓ Câmera iniciada!")
-    print("\nPosicione a caixa centralizada abaixo da câmera.")
+    print("\nPosicione a cacamba centralizada abaixo da câmera.")
     print("Pressione 'q' para sair.\n")
 
     try:
@@ -96,7 +96,7 @@ def verificar_caixa_por_altura():
             # Obter dimensões
             h, w = color_image.shape[:2]
 
-            # --- DETECÇÃO AUTOMÁTICA DA CAIXA ---
+            # --- DETECÇÃO AUTOMÁTICA DA CACAMBA ---
             # Converter para escala de cinza para processamento
             gray = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
 
@@ -113,14 +113,14 @@ def verificar_caixa_por_altura():
             # Encontrar contornos
             contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            # Procurar o maior retângulo (que deve ser a caixa)
+            # Procurar o maior retângulo (que deve ser a cacamba)
             melhor_contorno = None
             maior_area = 0
-            caixa_detectada = False
+            cacamba_detectada = False
 
             for contour in contours:
                 area = cv2.contourArea(contour)
-                if area > AREA_MINIMA_CAIXA:
+                if area > AREA_MINIMA_CACAMBA:
                     # Aproximar para um polígono
                     perimeter = cv2.arcLength(contour, True)
                     approx = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
@@ -130,24 +130,24 @@ def verificar_caixa_por_altura():
                         if area > maior_area:
                             maior_area = area
                             melhor_contorno = approx
-                            caixa_detectada = True
+                            cacamba_detectada = True
 
-            # Se detectou a caixa, usar sua região; caso contrário, usar centro
-            if caixa_detectada and melhor_contorno is not None:
+            # Se detectou a cacamba, usar sua região; caso contrário, usar centro
+            if cacamba_detectada and melhor_contorno is not None:
                 # Obter retângulo delimitador
                 x1, y1, w_box, h_box = cv2.boundingRect(melhor_contorno)
                 x2 = x1 + w_box
                 y2 = y1 + h_box
 
-                # Extrair região de profundidade dentro da caixa
+                # Extrair região de profundidade dentro da cacamba
                 regiao_depth = depth_image[y1:y2, x1:x2]
 
-                # Desenhar o contorno da caixa detectada
+                # Desenhar o contorno da cacamba detectada
                 cv2.drawContours(color_image, [melhor_contorno], -1, (0, 255, 255), 3)
                 cv2.rectangle(color_image, (x1, y1), (x2, y2), (255, 0, 255), 2)
 
             else:
-                # Fallback: usar região central se não detectar a caixa
+                # Fallback: usar região central se não detectar a cacamba
                 center_x, center_y = w // 2, h // 2
                 regiao_size = 50
                 x1 = max(0, center_x - regiao_size)
@@ -168,13 +168,13 @@ def verificar_caixa_por_altura():
             regiao_valida = regiao_depth[regiao_depth > 0]
 
             # Calcular distância mediana (mais robusta que média)
-            if len(regiao_valida) > 10 and (caixa_detectada or True):  # Garantir mínimo de pontos válidos
+            if len(regiao_valida) > 10 and (cacamba_detectada or True):  # Garantir mínimo de pontos válidos
                 distancia_pixels = np.median(regiao_valida)
                 distancia_metros = distancia_pixels * depth_scale
 
-                # Calcular altura do conteúdo dentro da caixa
+                # Calcular altura do conteúdo dentro da cacamba
                 altura_conteudo = ALTURA_CAMERA_CHAO - distancia_metros
-                percentual_cheio = (altura_conteudo / ALTURA_CAIXA) * 100
+                percentual_cheio = (altura_conteudo / ALTURA_CACAMBA) * 100
 
                 # Limitar percentual entre 0 e 100
                 percentual_cheio = max(0, min(100, percentual_cheio))
@@ -200,13 +200,13 @@ def verificar_caixa_por_altura():
 
                 # Preparar textos informativos
                 texto_status = f"STATUS: {status}"
-                if caixa_detectada:
-                    texto_distancia = f"Distancia: {distancia_metros:.3f}m | CAIXA DETECTADA"
+                if cacamba_detectada:
+                    texto_distancia = f"Distancia: {distancia_metros:.3f}m | CACAMBA DETECTADA"
                 else:
                     texto_distancia = f"Distancia: {distancia_metros:.3f}m | Modo Centro"
                 texto_altura = f"Altura conteudo: {altura_conteudo*100:.1f}cm"
                 texto_percentual = f"Preenchimento: {percentual_cheio:.0f}%"
-                texto_area = f"Area da caixa: {maior_area:.0f} px²" if caixa_detectada else ""
+                texto_area = f"Area da cacamba: {maior_area:.0f} px²" if cacamba_detectada else ""
 
             else:
                 # Medição inválida
@@ -214,10 +214,10 @@ def verificar_caixa_por_altura():
                 cor_status = (128, 128, 128)
                 cor_regiao = (128, 128, 128)
                 texto_status = "STATUS: SEM LEITURA"
-                if caixa_detectada:
-                    texto_distancia = "Caixa detectada | Aguardando medicao valida..."
+                if cacamba_detectada:
+                    texto_distancia = "Cacamba detectada | Aguardando medicao valida..."
                 else:
-                    texto_distancia = "Procurando caixa..."
+                    texto_distancia = "Procurando cacamba..."
                 texto_altura = ""
                 texto_percentual = ""
                 texto_area = ""
@@ -256,7 +256,7 @@ def verificar_caixa_por_altura():
             # Exibir informações de configuração no canto direito
             info_config = [
                 f"Camera: {ALTURA_CAMERA_CHAO*100:.0f}cm",
-                f"Caixa: {ALTURA_CAIXA*100:.0f}cm",
+                f"Cacamba: {ALTURA_CACAMBA*100:.0f}cm",
                 f"Fundo: {DISTANCIA_FUNDO_VAZIO:.3f}m",
                 f"Borda: {DISTANCIA_BORDA_CHEIA:.3f}m"
             ]
@@ -266,7 +266,7 @@ def verificar_caixa_por_altura():
                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (180, 180, 180), 1)
 
             # Mostrar imagem
-            cv2.imshow('Detector de Nivel da Caixa', color_image)
+            cv2.imshow('Detector de Nivel da Cacamba', color_image)
 
             # Criar mapa de calor da profundidade
             depth_colormap = cv2.applyColorMap(
@@ -299,5 +299,4 @@ def verificar_caixa_por_altura():
 
 
 if __name__ == "__main__":
-    verificar_caixa_por_altura()
-
+    verificar_cacamba_por_altura()

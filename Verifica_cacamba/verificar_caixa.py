@@ -4,17 +4,17 @@ import cv2
 
 
 def rastrear_cacamba_hostil():
-    # --- CONFIGURAÇÕES PARA TESTE COM CAIXA DE ISOPOR ---
-    # Caixa: 20cm de altura
+    # --- CONFIGURAÇÕES PARA TESTE COM CACAMBA DE ISOPOR ---
+    # Cacamba: 20cm de altura
     # Câmera: 72.5cm (0.725m) do chão
 
-    AREA_MINIMA = 5000  # Reduzido para detectar caixa menor
+    AREA_MINIMA = 5000  # Reduzido para detectar cacamba menor
 
     # Distâncias de referência (em metros)
     ALTURA_CAMERA_CHAO = 0.725  # 72.5cm
-    ALTURA_CAIXA = 0.20  # 20cm
-    ALTURA_BORDA_CAIXA = ALTURA_CAMERA_CHAO - ALTURA_CAIXA  # 0.525m até a borda
-    ALTURA_FUNDO_CAIXA = ALTURA_CAMERA_CHAO  # 0.725m até o fundo da caixa
+    ALTURA_CACAMBA = 0.20  # 20cm
+    ALTURA_BORDA_CACAMBA = ALTURA_CAMERA_CHAO - ALTURA_CACAMBA  # 0.525m até a borda
+    ALTURA_FUNDO_CACAMBA = ALTURA_CAMERA_CHAO  # 0.725m até o fundo da cacamba
 
     # Tolerância para detecção (em metros)
     TOLERANCIA = 0.03  # 3cm de margem
@@ -87,7 +87,7 @@ def rastrear_cacamba_hostil():
 
             # --- PROCESSAMENTO DE VISÃO (Agora no Espectro IR) ---
 
-            # Melhora o contraste da imagem IR para destacar as bordas da caçamba no escuro
+            # Melhora o contraste da imagem IR para destacar as bordas da cacamba no escuro
             # Equalização de histograma ajuda a ver detalhes mesmo com pouca luz refletida
             ir_enhanced = cv2.equalizeHist(ir_image)
 
@@ -122,7 +122,7 @@ def rastrear_cacamba_hostil():
                             melhor_retangulo = approx
 
             # --- ANÁLISE DE PROFUNDIDADE ---
-            status = "AGUARDANDO CAIXA..."
+            status = "AGUARDANDO CACAMBA..."
             cor_status = (128, 128, 128)  # Cinza
 
             if melhor_retangulo is not None:
@@ -153,9 +153,9 @@ def rastrear_cacamba_hostil():
                         # Usamos a mediana para evitar outliers (picos de poeira)
                         distancia_mediana = np.median(distancias_reais)
 
-                        # Calcular a altura do conteúdo dentro da caixa
-                        altura_conteudo = ALTURA_FUNDO_CAIXA - distancia_mediana
-                        percentual_cheio = (altura_conteudo / ALTURA_CAIXA) * 100
+                        # Calcular a altura do conteúdo dentro da cacamba
+                        altura_conteudo = ALTURA_FUNDO_CACAMBA - distancia_mediana
+                        percentual_cheio = (altura_conteudo / ALTURA_CACAMBA) * 100
 
                         # Limitar percentual entre 0 e 100
                         if percentual_cheio < 0:
@@ -163,21 +163,21 @@ def rastrear_cacamba_hostil():
                         elif percentual_cheio > 100:
                             percentual_cheio = 100
 
-                        # Classificar estado da caixa
-                        if distancia_mediana >= (ALTURA_FUNDO_CAIXA - TOLERANCIA):
-                            # Distância próxima ao fundo = caixa vazia
-                            status = "CAIXA VAZIA"
+                        # Classificar estado da cacamba
+                        if distancia_mediana >= (ALTURA_FUNDO_CACAMBA - TOLERANCIA):
+                            # Distância próxima ao fundo = cacamba vazia
+                            status = "CACAMBA VAZIA"
                             cor_status = (0, 0, 255)  # Vermelho
                             texto_info = f"Vazia | Dist: {distancia_mediana:.3f}m"
 
-                        elif distancia_mediana <= (ALTURA_BORDA_CAIXA + TOLERANCIA):
+                        elif distancia_mediana <= (ALTURA_BORDA_CACAMBA + TOLERANCIA):
                             # Objeto até a borda ou acima
-                            status = "CAIXA CHEIA"
+                            status = "CACAMBA CHEIA"
                             cor_status = (0, 255, 0)  # Verde
                             texto_info = f"Cheia {percentual_cheio:.0f}% | Alt: {altura_conteudo*100:.1f}cm"
 
                         else:
-                            # Objeto no meio da caixa
+                            # Objeto no meio da cacamba
                             status = "PARCIALMENTE CHEIA"
                             cor_status = (0, 165, 255)  # Laranja
                             texto_info = f"Parcial {percentual_cheio:.0f}% | Alt: {altura_conteudo*100:.1f}cm"
@@ -188,7 +188,7 @@ def rastrear_cacamba_hostil():
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, cor_status, 2)
 
                         # Informação adicional de debug
-                        texto_debug = f"Medida: {distancia_mediana:.3f}m | Fundo: {ALTURA_FUNDO_CAIXA:.3f}m | Borda: {ALTURA_BORDA_CAIXA:.3f}m"
+                        texto_debug = f"Medida: {distancia_mediana:.3f}m | Fundo: {ALTURA_FUNDO_CACAMBA:.3f}m | Borda: {ALTURA_BORDA_CACAMBA:.3f}m"
                         cv2.putText(display_image, texto_debug, (x, y + h + 50),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
 
@@ -197,13 +197,13 @@ def rastrear_cacamba_hostil():
             cv2.rectangle(display_image, (0, 0), (640, 100), (0, 0, 0), -1)
             cv2.putText(display_image, f"MODO IR - {status}", (20, 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, cor_status, 2)
-            cv2.putText(display_image, f"Camera: {ALTURA_CAMERA_CHAO*100:.1f}cm | Caixa: {ALTURA_CAIXA*100:.0f}cm",
+            cv2.putText(display_image, f"Camera: {ALTURA_CAMERA_CHAO*100:.1f}cm | Cacamba: {ALTURA_CACAMBA*100:.0f}cm",
                         (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             cv2.putText(display_image, "Pressione 'q' para sair",
                         (20, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
 
             # Mostra a visão do sensor IR (que vê no escuro)
-            cv2.imshow('Monitor Deteccao Caixa', display_image)
+            cv2.imshow('Monitor Deteccao Cacamba', display_image)
 
             # Opcional: ver o mapa de calor da profundidade filtrada
             depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)

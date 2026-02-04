@@ -86,12 +86,12 @@ def carregar_configuracoes(caminho_config="config.json"):
         return config_padrao
 
 
-def verificar_caixa_v3():
+def verificar_cacamba_v3():
     """
     Versão 3: Sistema híbrido avançado com detecção por profundidade
 
     MELHORIAS:
-    - Detecção de caixa usando mapa de profundidade (não depende de iluminação)
+    - Detecção da cacamba usando mapa de profundidade (não depende de iluminação)
     - Filtro temporal com histórico para estabilizar detecção
     - Sensor infravermelho para ambientes escuros
     - Medição em múltiplas regiões para maior precisão
@@ -104,7 +104,7 @@ def verificar_caixa_v3():
     cfg = carregar_configuracoes()
 
     def validar_deteccao(contour, profundidade_mediana, area, w, h, PROFUNDIDADE_MINIMA_CORPO, AREA_MAXIMA_CORPO, ROI_X_MIN, ROI_X_MAX, ROI_Y_MIN, ROI_Y_MAX):
-        """Valida se a detecção é realmente a caixa e não uma pessoa"""
+        """Valida se a detecção é realmente a cacamba e não uma pessoa"""
 
         # Verificação 1: Profundidade muito pequena = pessoa muito próxima
         if profundidade_mediana < PROFUNDIDADE_MINIMA_CORPO:
@@ -114,7 +114,7 @@ def verificar_caixa_v3():
         if area > AREA_MAXIMA_CORPO:
             return False, f"Objeto muito grande ({area} px²) - Provavelmente pessoa"
 
-        # Verificação 3: Contorno fora da ROI esperada da caixa
+        # Verificação 3: Contorno fora da ROI esperada da cacamba
         x, y, w_box, h_box = cv2.boundingRect(contour)
 
         roi_x_center = (x + w_box/2) / w
@@ -142,9 +142,9 @@ def verificar_caixa_v3():
 
     # Medições
     ALTURA_CAMERA_CHAO = cfg['medicoes']['altura_camera_chao']
-    ALTURA_CAIXA = cfg['medicoes']['altura_caixa']
-    PROFUNDIDADE_MIN_CAIXA = cfg['medicoes']['profundidade_min_caixa']
-    PROFUNDIDADE_MAX_CAIXA = cfg['medicoes']['profundidade_max_caixa']
+    ALTURA_CACAMBA = cfg['medicoes']['altura_caixa']
+    PROFUNDIDADE_MIN_CACAMBA = cfg['medicoes']['profundidade_min_caixa']
+    PROFUNDIDADE_MAX_CACAMBA = cfg['medicoes']['profundidade_max_caixa']
     AREA_MINIMA_PIXELS = cfg['medicoes']['area_minima_pixels']
 
     # Proteção contra pessoas
@@ -181,7 +181,7 @@ def verificar_caixa_v3():
 
     # Distâncias calculadas
     DISTANCIA_FUNDO_VAZIO = ALTURA_CAMERA_CHAO
-    DISTANCIA_BORDA_CHEIA = ALTURA_CAMERA_CHAO - ALTURA_CAIXA
+    DISTANCIA_BORDA_CHEIA = ALTURA_CAMERA_CHAO - ALTURA_CACAMBA
     TOLERANCIA = 0.03
 
     # Histórico temporal para estabilização
@@ -204,13 +204,13 @@ def verificar_caixa_v3():
     config.enable_stream(rs.stream.color, RESOLUCAO_LARGURA, RESOLUCAO_ALTURA, rs.format.bgr8, FPS)
 
     print("="*70)
-    print("SISTEMA DE DETECÇÃO DE NÍVEL DA CAIXA V3")
+    print("SISTEMA DE DETECÇÃO DE NÍVEL DA CACAMBA V3")
     print("="*70)
     print("🎯 Detecção híbrida por profundidade + IR")
     print("📊 Histórico temporal para estabilização")
     print("🎨 Visualização aprimorada com estatísticas")
     print("="*70)
-    print(f"Altura câmera: {ALTURA_CAMERA_CHAO*100:.1f}cm | Altura caixa: {ALTURA_CAIXA*100:.0f}cm")
+    print(f"Altura câmera: {ALTURA_CAMERA_CHAO*100:.1f}cm | Altura cacamba: {ALTURA_CACAMBA*100:.0f}cm")
     print("="*70)
 
     profile = pipeline.start(config)
@@ -280,13 +280,13 @@ def verificar_caixa_v3():
 
             h, w = display_image.shape[:2]
 
-            # --- DETECÇÃO DA CAIXA POR SEGMENTAÇÃO DE PROFUNDIDADE ---
+            # --- DETECÇÃO DA CACAMBA POR SEGMENTAÇÃO DE PROFUNDIDADE ---
             depth_meters = depth_image * depth_scale
 
-            # Criar máscara da região de interesse (onde pode estar a caixa)
-            mask_roi = (depth_meters > PROFUNDIDADE_MIN_CAIXA) & (depth_meters < PROFUNDIDADE_MAX_CAIXA)
+            # Criar máscara da região de interesse (onde pode estar a cacamba)
+            mask_roi = (depth_meters > PROFUNDIDADE_MIN_CACAMBA) & (depth_meters < PROFUNDIDADE_MAX_CACAMBA)
 
-            # Encontrar o maior componente conectado (a caixa)
+            # Encontrar o maior componente conectado (a cacamba)
             mask_uint8 = mask_roi.astype(np.uint8) * 255
 
             # Operações morfológicas para limpar a máscara
@@ -318,7 +318,7 @@ def verificar_caixa_v3():
                         if len(regiao_valida) > 10:
                             prof_mediana = np.median(regiao_valida)
 
-                            # VALIDAR: É realmente o conteúdo da caixa ou é uma pessoa?
+                            # VALIDAR: É realmente o conteúdo da cacamba ou é uma pessoa?
                             eh_valido, motivo = validar_deteccao(
                                 contour, prof_mediana, area, w, h,
                                 PROFUNDIDADE_MINIMA_CORPO, AREA_MAXIMA_CORPO,
@@ -338,7 +338,7 @@ def verificar_caixa_v3():
                 x1, y1, w_box, h_box = cv2.boundingRect(melhor_contorno)
                 x2, y2 = x1 + w_box, y1 + h_box
 
-                # Desenhar contorno da caixa
+                # Desenhar contorno da cacamba
                 cv2.drawContours(display_image, [melhor_contorno], -1, (0, 255, 255), 2)
                 cv2.rectangle(display_image, (x1, y1), (x2, y2), (255, 0, 255), 2)
 
@@ -413,7 +413,7 @@ def verificar_caixa_v3():
 
                 # Calcular estatísticas
                 altura_conteudo = ALTURA_CAMERA_CHAO - distancia_final
-                percentual_cheio = (altura_conteudo / ALTURA_CAIXA) * 100
+                percentual_cheio = (altura_conteudo / ALTURA_CACAMBA) * 100
                 percentual_cheio = max(0, min(100, percentual_cheio))
 
                 # Determinar status (se não foi mudança rápida)
@@ -460,7 +460,7 @@ def verificar_caixa_v3():
                 confianca = max(0, min(100, confianca))
 
                 # Preparar textos
-                modo = "CAIXA DETECTADA" if caixa_detectada else "Modo Centro"
+                modo = "CACAMBA DETECTADA" if caixa_detectada else "Modo Centro"
                 texto_dist = f"Dist: {distancia_final:.3f}m ({len(medicoes_grid)} pts)"
                 texto_altura = f"Altura: {altura_conteudo*100:.1f}cm"
                 texto_percent = f"{percentual_cheio:.0f}%"
@@ -574,7 +574,7 @@ def verificar_caixa_v3():
                 colormap_selecionado
             )
 
-            # Sobrepor máscara da caixa detectada
+            # Sobrepor máscara da cacamba detectada
             if caixa_detectada:
                 overlay = depth_colormap.copy()
                 cv2.drawContours(overlay, [melhor_contorno], -1, (255, 255, 255), 3)
@@ -611,5 +611,4 @@ def verificar_caixa_v3():
 
 
 if __name__ == "__main__":
-    verificar_caixa_v3()
-
+    verificar_cacamba_v3()

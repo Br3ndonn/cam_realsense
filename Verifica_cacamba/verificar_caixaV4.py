@@ -1,5 +1,5 @@
 """
-Sistema de Detecção de Nível da Caixa - Versão 4 com GUI
+Sistema de Detecção de Nível da Cacamba - Versão 4 com GUI
 =========================================================
 
 NOVA FUNCIONALIDADE V4:
@@ -102,12 +102,12 @@ def carregar_configuracoes(caminho_config="config.json"):
         return config_padrao
 
 
-class DetectorCaixaGUI:
-    """Interface gráfica para o sistema de detecção de caixa"""
+class DetectorCacambaGUI:
+    """Interface gráfica para o sistema de detecção da cacamba"""
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Sistema de Detecção de Nível da Caixa V4")
+        self.root.title("Sistema de Detecção de Nível da Cacamba V4")
         self.root.geometry("1400x900")
         self.root.configure(bg="#2b2b2b")
 
@@ -156,7 +156,7 @@ class DetectorCaixaGUI:
         # Título
         titulo = tk.Label(
             painel_controles,
-            text="🎯 SISTEMA DE DETECÇÃO DE NÍVEL DA CAIXA V4",
+            text="🎯 SISTEMA DE DETECÇÃO DE NÍVEL DA CACAMBA V4",
             font=("Arial", 16, "bold"),
             bg="#1e1e1e",
             fg="#4CAF50"
@@ -261,7 +261,7 @@ class DetectorCaixaGUI:
         grid_status = tk.Frame(frame_status, bg="#1e1e1e")
         grid_status.pack(pady=5, padx=10)
 
-        # Status da caixa (grande)
+        # Status da cacamba (grande)
         self.label_status = tk.Label(
             grid_status,
             text="AGUARDANDO",
@@ -530,10 +530,10 @@ class DetectorCaixaGUI:
         self.config_widgets['altura_camera_chao'].grid(row=row, column=1, padx=5, pady=2)
         row += 1
 
-        # Altura caixa
+        # Altura cacamba
         tk.Label(
             parent,
-            text="Altura caixa (m):",
+            text="Altura cacamba (m):",
             font=("Arial", 9),
             bg="#1e1e1e",
             fg="white"
@@ -1161,7 +1161,7 @@ class DetectorCaixaGUI:
     def mostrar_ajuda(self):
         """Mostra janela de ajuda"""
         ajuda_texto = """
-        SISTEMA DE DETECÇÃO DE NÍVEL DA CAIXA V4
+        SISTEMA DE DETECÇÃO DE NÍVEL DA CACAMBA V4
         ==========================================
         
         COMO USAR:
@@ -1172,14 +1172,14 @@ class DetectorCaixaGUI:
         
         CONFIGURAÇÕES PRINCIPAIS:
         • Altura câmera: Distância da câmera ao chão (m)
-        • Altura caixa: Altura total da caixa (m)
+        • Altura cacamba: Altura total da cacamba (m)
         • Limite VAZIA: Distância para considerar vazia (m)
         • Limite CHEIA: Distância para considerar cheia (m)
         
         STATUS:
-        • VAZIA: Caixa sem conteúdo
-        • PARCIAL: Caixa parcialmente cheia
-        • CHEIA: Caixa completamente cheia
+        • VAZIA: Cacamba sem conteúdo
+        • PARCIAL: Cacamba parcialmente cheia
+        • CHEIA: Cacamba completamente cheia
         
         DICAS:
         • Mantenha a área limpa durante calibração
@@ -1203,7 +1203,7 @@ class DetectorCaixaGUI:
 def main():
     """Função principal"""
     root = tk.Tk()
-    app = DetectorCaixaGUI(root)
+    app = DetectorCacambaGUI(root)
     root.mainloop()
 
 
