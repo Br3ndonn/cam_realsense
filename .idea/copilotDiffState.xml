@@ -3,14 +3,6 @@
   <component name="CopilotDiffPersistence">
     <option name="pendingDiffs">
       <map>
-        <entry key="$PROJECT_DIR$/Verifica_cacamba/config.json">
-          <value>
-            <PendingDiffInfo>
-              <option name="filePath" value="$PROJECT_DIR$/Verifica_cacamba/config.json" />
-              <option name="updatedContent" value="{&#10;  &quot;camera&quot;: {&#10;    &quot;resolucao_largura&quot;: 640,&#10;    &quot;resolucao_altura&quot;: 480,&#10;    &quot;fps&quot;: 30,&#10;    &quot;clip_min&quot;: 0.1,&#10;    &quot;clip_max&quot;: 2.0,&#10;    &quot;laser_potencia&quot;: 360&#10;  },&#10;  &quot;medicoes&quot;: {&#10;    &quot;altura_camera_chao&quot;: 0.725,&#10;    &quot;altura_caixa&quot;: 0.20,&#10;    &quot;profundidade_min_caixa&quot;: 0.45,&#10;    &quot;profundidade_max_caixa&quot;: 0.85,&#10;    &quot;area_minima_pixels&quot;: 5000&#10;  },&#10;  &quot;protecao_pessoa&quot;: {&#10;    &quot;profundidade_minima_corpo&quot;: 0.20,&#10;    &quot;area_maxima_corpo&quot;: 200000,&#10;    &quot;velocidade_max_mudanca&quot;: 0.05,&#10;    &quot;tempo_minimo_entre_mudancas&quot;: 1.0&#10;  },&#10;  &quot;roi&quot;: {&#10;    &quot;x_min&quot;: 0.25,&#10;    &quot;x_max&quot;: 0.75,&#10;    &quot;y_min&quot;: 0.25,&#10;    &quot;y_max&quot;: 0.85&#10;  },&#10;  &quot;thresholds&quot;: {&#10;    &quot;limite_vazia&quot;: 0.70,&#10;    &quot;limite_cheia&quot;: 0.55,&#10;    &quot;threshold_binary&quot;: 127&#10;  },&#10;  &quot;filtros&quot;: {&#10;    &quot;tamanho_historico&quot;: 10,&#10;    &quot;historico_distancias&quot;: 30,&#10;    &quot;kernel_morph_size&quot;: 5,&#10;    &quot;grid_medicao_size&quot;: 3&#10;  },&#10;  &quot;visualizacao&quot;: {&#10;    &quot;mostrar_fps&quot;: true,&#10;    &quot;mostrar_grid&quot;: true,&#10;    &quot;mostrar_ir&quot;: true,&#10;    &quot;colormap&quot;: 2&#10;  },&#10;  &quot;sons&quot;: {&#10;    &quot;beep_mudanca_status&quot;: true,&#10;    &quot;beep_frequencia&quot;: 1000,&#10;    &quot;beep_duracao&quot;: 200&#10;  }&#10;}&#10;" />
-            </PendingDiffInfo>
-          </value>
-        </entry>
         <entry key="$PROJECT_DIR$/explicacao_V3.md">
           <value>
             <PendingDiffInfo>

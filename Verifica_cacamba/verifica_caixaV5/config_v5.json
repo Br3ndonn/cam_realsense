@@ -8,7 +8,7 @@
     "laser_potencia": 360
   },
   "medicoes": {
-    "altura_camera_chao": 0.725,
+    "altura_camera_chao": 1.0,
     "altura_caixa": 0.2,
     "profundidade_min_caixa": 0.45,
     "profundidade_max_caixa": 0.85,
@@ -17,7 +17,6 @@
   "protecao_pessoa": {
     "profundidade_minima_corpo": 0.2,
     "area_maxima_corpo": 200000,
-    "velocidade_max_mudanca": 0.05,
     "tempo_minimo_entre_mudancas": 1.0
   },
   "roi": {
@@ -27,9 +26,8 @@
     "y_max": 0.85
   },
   "thresholds": {
-    "limite_vazia": 1.0,
-    "limite_cheia": 0.55,
-    "threshold_binary": 127
+    "limite_vazia": 0.7,
+    "limite_cheia": 0.55
   },
   "filtros": {
     "tamanho_historico": 10,
@@ -47,5 +45,6 @@
     "beep_mudanca_status": true,
     "beep_frequencia": 1000,
     "beep_duracao": 200
-  }
+  },
+  "perfis": {}
 }
