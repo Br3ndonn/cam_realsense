@@ -60,6 +60,120 @@ class DetectorCacamba:
 
     # ── Main processing ───────────────────────────────────────────────────────
 
+    def processar_frame_3d(
+        self,
+        depth_meters: np.ndarray,
+        verts_xyz: Optional[np.ndarray] = None,
+    ) -> ResultadoDeteccao:
+        """
+        Processa um frame usando volumetria 3D se os vértices estiverem disponíveis.
+        Cai de volta para o processamento 2D se verts_xyz for None.
+        """
+        if verts_xyz is None:
+            return self.processar_frame(depth_meters)
+
+        cfg = self._cfg
+        dh, dw = depth_meters.shape[:2]
+
+        # 1. Detecção do contorno (reutiliza lógica 2D para encontrar a caixa)
+        PROF_MIN = cfg["medicoes"]["profundidade_min_caixa"]
+        PROF_MAX = cfg["medicoes"]["profundidade_max_caixa"]
+        AREA_MIN = cfg["medicoes"]["area_minima_pixels"]
+        KERNEL = cfg["filtros"]["kernel_morph_size"]
+
+        mask = ((depth_meters > PROF_MIN) & (depth_meters < PROF_MAX)).astype(np.uint8) * 255
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (KERNEL, KERNEL))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        melhor_contorno = None
+        maior_area = 0.0
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < AREA_MIN: continue
+            valido, _ = self._validar_deteccao(contour, depth_meters, dw, dh)
+            if valido and area > maior_area:
+                maior_area = area
+                melhor_contorno = contour
+
+        resultado = ResultadoDeteccao()
+        if melhor_contorno is None:
+            return resultado
+
+        x1, y1, wb, hb = cv2.boundingRect(melhor_contorno)
+        resultado.caixa_detectada = True
+        resultado.bbox = (x1, y1, x1 + wb, y1 + hb)
+
+        # 2. Cálculo Volumétrico
+        # Reshape verts_xyz para (H, W, 3) se veio como (N, 3)
+        if verts_xyz.shape[0] == dh * dw:
+            verts_3d = verts_xyz.reshape(dh, dw, 3)
+        else:
+            # Fallback para 2D se o shape não bater
+            return self.processar_frame(depth_meters)
+
+        # Recortar a região 3D da caixa
+        box_3d = verts_3d[y1:y1+hb, x1:x1+wb]
+        z_values = box_3d[:, :, 2] # Coordenada Z (profundidade em metros)
+
+        # Filtro de CLIP (ignorar pontos fora do range útil da cacamba)
+        CLIP_MIN = cfg["camera"]["clip_min"]
+        CLIP_MAX = cfg["camera"]["clip_max"]
+        valid_mask = (z_values > CLIP_MIN) & (z_values < CLIP_MAX)
+        z_valid = z_values[valid_mask]
+
+        if z_valid.size < 10:
+            return resultado
+
+        # 3D SOR (Statistical Outlier Removal) simplificado
+        # Remove pontos que fogem muito da média local (poeira/ruído)
+        mean_z = np.mean(z_valid)
+        std_z = np.std(z_valid)
+        z_filtered = z_valid[np.abs(z_valid - mean_z) < 2 * std_z]
+
+        if z_filtered.size == 0:
+            return resultado
+
+        # Distância média/mediana para compatibilidade com o histórico
+        distancia = float(np.median(z_filtered))
+        self._hist_dist.append(distancia)
+
+        # CÁLCULO DE VOLUME
+        # h_i = altura_camera - z_i
+        ALT_CAM = cfg["medicoes"]["altura_camera_chao"]
+        ALT_CAIXA = max(cfg["medicoes"]["altura_caixa"], 0.001)
+        
+        # O percentual volumétrico é a média das alturas individuais / altura total
+        alturas = np.clip(ALT_CAM - z_filtered, 0, ALT_CAIXA)
+        percentual = float(np.mean(alturas) / ALT_CAIXA * 100)
+
+        # 3. Status e Confiança (mesma lógica do 2D)
+        LIMITE_VAZIA = cfg["thresholds"]["limite_vazia"]
+        LIMITE_CHEIA = cfg["thresholds"]["limite_cheia"]
+        if distancia >= LIMITE_VAZIA: status_inst = "VAZIA"
+        elif distancia <= LIMITE_CHEIA: status_inst = "CHEIA"
+        else: status_inst = "PARCIAL"
+
+        self._hist_status.append(status_inst)
+        if len(self._hist_status) >= 5:
+            contagem = {s: list(self._hist_status).count(s) for s in ("VAZIA", "PARCIAL", "CHEIA")}
+            status_est = max(contagem, key=contagem.get)
+        else:
+            status_est = status_inst
+
+        std = float(np.std(z_filtered))
+        confianca = max(0.0, min(100.0, 100.0 - std * 1000))
+        self._hist_confianca.append(confianca)
+
+        resultado.status = status_inst
+        resultado.status_estavel = status_est
+        resultado.distancia = distancia
+        resultado.percentual = percentual
+        resultado.confianca = confianca
+        return resultado
+
     def processar_frame(
         self,
         depth_meters: np.ndarray,

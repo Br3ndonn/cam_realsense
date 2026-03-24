@@ -491,15 +491,21 @@ class DetectorCacambaGUIV5:
 
             self._enqueue_log("✅ RealSense conectada e configurada.")
 
+            align_to = rs.stream.color
+            align = rs.align(align_to)
+            pc = rs.pointcloud()
+
             t_prev_frame = time.time()  # para medir FPS inter-frame real
             while not self._stop_event.is_set():
                 # Processar comandos da GUI (ex: update_config)
                 self._processar_cmd_queue(detector)
 
                 frames = pipeline.wait_for_frames(timeout_ms=1000)
-                depth_raw = frames.get_depth_frame()
-                color_frame = frames.get_color_frame()
-                ir_frame = frames.get_infrared_frame(1)
+                aligned_frames = align.process(frames)
+                
+                depth_raw = aligned_frames.get_depth_frame()
+                color_frame = aligned_frames.get_color_frame()
+                ir_frame = aligned_frames.get_infrared_frame(1)
 
                 if not depth_raw:
                     continue
@@ -516,18 +522,19 @@ class DetectorCacambaGUIV5:
 
                 depth_image = np.asanyarray(filtered.get_data())
                 depth_meters = depth_image * depth_scale
+                
+                # Gerar PointCloud (3D)
+                points = pc.calculate(filtered)
+                verts = np.asanyarray(points.get_vertices()).view(np.float32).reshape(-1, 3)
 
                 if color_frame:
                     frame_bgr = np.asanyarray(color_frame.get_data())
-                    dh, dw = depth_meters.shape[:2]
-                    if frame_bgr.shape[:2] != (dh, dw):
-                        frame_bgr = cv2.resize(frame_bgr, (dw, dh))
                 else:
                     ir_img = np.asanyarray(ir_frame.get_data())
                     frame_bgr = cv2.cvtColor(ir_img, cv2.COLOR_GRAY2BGR)
 
                 ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                self._processar_e_enfileirar(frame_bgr, depth_meters, fps, ts, detector, cfg)
+                self._processar_e_enfileirar(frame_bgr, depth_meters, fps, ts, detector, cfg, verts)
 
         except Exception as e:
             self._enqueue_log(f"❌ Erro câmera: {e}")
@@ -558,9 +565,16 @@ class DetectorCacambaGUIV5:
             t0 = time.time()
 
             frame_bgr, depth_meters = self._gerar_frame_simulado(t, cfg)
+            
+            # Gerar mock vertices para simulação
+            h, w = depth_meters.shape
+            verts = np.zeros((h * w, 3), dtype=np.float32)
+            # Preencher Z com depth_meters, X e Y simplificados
+            verts[:, 2] = depth_meters.flatten()
+            
             fps = 30.0
             ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            self._processar_e_enfileirar(frame_bgr, depth_meters, fps, ts, detector, cfg)
+            self._processar_e_enfileirar(frame_bgr, depth_meters, fps, ts, detector, cfg, verts)
 
             # Simular ~30 FPS
             elapsed = time.time() - t0
@@ -616,10 +630,11 @@ class DetectorCacambaGUIV5:
         ts: str,
         detector: DetectorCacamba,
         cfg: dict,
+        verts: Optional[np.ndarray] = None,
     ):
         """Detecta, desenha overlays e coloca resultado na data_queue."""
         # Detecção leve sempre ocorre (atualiza históricos)
-        resultado = detector.processar_frame(depth_meters)
+        resultado = detector.processar_frame_3d(depth_meters, verts)
         mudou, status_anterior = detector.detectou_mudanca_status(resultado.status_estavel)
 
         # Se a fila já está cheia, descartar ANTES de fazer qualquer trabalho pesado
