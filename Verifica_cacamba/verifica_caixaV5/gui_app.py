@@ -82,10 +82,13 @@ class DetectorCacambaGUIV5:
         # ── Comunicação entre threads ──────────────────────────────────────
         # A thread da câmera coloca msgs aqui; a GUI consome via poll_queue()
         self.data_queue: queue.Queue = queue.Queue(maxsize=3)
+        # Fila dedicada para inferência pesada 3D
+        self.infer_queue: queue.Queue = queue.Queue(maxsize=2)
         # A GUI envia comandos para a thread da câmera (ex: atualizar config)
         self.cmd_queue: queue.Queue = queue.Queue()
         self._stop_event = threading.Event()
         self._thread_camera: Optional[threading.Thread] = None
+        self._thread_inferencia: Optional[threading.Thread] = None
 
         # Snapshot de config para a thread da câmera.
         # Atualizado APENAS pela GUI thread com o lock.
@@ -415,12 +418,13 @@ class DetectorCacambaGUIV5:
             return
 
         self._stop_event.clear()
-        # Limpar fila antiga
+        # Limpar filas antigas
         while not self.data_queue.empty():
-            try:
-                self.data_queue.get_nowait()
-            except queue.Empty:
-                break
+            try: self.data_queue.get_nowait()
+            except queue.Empty: break
+        while not self.infer_queue.empty():
+            try: self.infer_queue.get_nowait()
+            except queue.Empty: break
 
         # Snapshot de config para a thread
         with self._cfg_lock:
@@ -428,7 +432,10 @@ class DetectorCacambaGUIV5:
 
         target = self._loop_simulacao if self.simulate else self._loop_camera
         self._thread_camera = threading.Thread(target=target, daemon=True)
+        self._thread_inferencia = threading.Thread(target=self._loop_inferencia, daemon=True)
+        
         self._thread_camera.start()
+        self._thread_inferencia.start()
 
         self._camera_ativa = True
         self._tempo_inicio = time.time()
@@ -440,6 +447,8 @@ class DetectorCacambaGUIV5:
         self._stop_event.set()
         if self._thread_camera:
             self._thread_camera.join(timeout=3.0)
+        if self._thread_inferencia:
+            self._thread_inferencia.join(timeout=3.0)
         self._camera_ativa = False
         self._btn_toggle.config(text="▶ INICIAR CÂMERA", bg="#4CAF50")
         self._barra_status.config(text="💤 Câmera parada.")
@@ -534,7 +543,29 @@ class DetectorCacambaGUIV5:
                     frame_bgr = cv2.cvtColor(ir_img, cv2.COLOR_GRAY2BGR)
 
                 ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                self._processar_e_enfileirar(frame_bgr, depth_meters, fps, ts, detector, cfg, verts)
+                
+                # Enviar para thread de inferência em vez de processar aqui
+                try:
+                    # Limpar frames antigos se a inferência estiver lenta
+                    if self.infer_queue.full():
+                        self.infer_queue.get_nowait()
+                    self.infer_queue.put_nowait({
+                        "frame_bgr": frame_bgr,
+                        "depth_meters": depth_meters,
+                        "verts": verts,
+                        "fps": fps,
+                        "ts": ts
+                    })
+                except queue.Full:
+                    pass
+
+                # Liberar memória C++ explicitamente
+                del depth_raw
+                del color_frame
+                del ir_frame
+                del aligned_frames
+                del frames
+                del points
 
         except Exception as e:
             self._enqueue_log(f"❌ Erro câmera: {e}")
@@ -554,13 +585,10 @@ class DetectorCacambaGUIV5:
         with self._cfg_lock:
             cfg = copy.deepcopy(self._cfg_snapshot)
 
-        detector = DetectorCacamba(cfg)
         t_start = time.time()
         self._enqueue_log("🎮 Modo simulação ativo — câmera virtual rodando.")
 
         while not self._stop_event.is_set():
-            self._processar_cmd_queue(detector)
-
             t = time.time() - t_start
             t0 = time.time()
 
@@ -574,7 +602,20 @@ class DetectorCacambaGUIV5:
             
             fps = 30.0
             ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            self._processar_e_enfileirar(frame_bgr, depth_meters, fps, ts, detector, cfg, verts)
+
+            # Enviar para thread de inferência (Async)
+            try:
+                if self.infer_queue.full():
+                    self.infer_queue.get_nowait()
+                self.infer_queue.put_nowait({
+                    "frame_bgr": frame_bgr,
+                    "depth_meters": depth_meters,
+                    "verts": verts,
+                    "fps": fps,
+                    "ts": ts
+                })
+            except queue.Full:
+                pass
 
             # Simular ~30 FPS
             elapsed = time.time() - t0
@@ -622,22 +663,48 @@ class DetectorCacambaGUIV5:
         except queue.Empty:
             pass
 
+    def _loop_inferencia(self):
+        """Thread dedicada para processamento 3D pesado, não bloqueando a câmera."""
+        with self._cfg_lock:
+            cfg = copy.deepcopy(self._cfg_snapshot)
+        detector = DetectorCacamba(cfg)
+
+        while not self._stop_event.is_set():
+            # Tentar processar comandos também na inferência para manter config atualizada
+            self._processar_cmd_queue(detector)
+
+            try:
+                # Bloqueia até ter um frame para processar
+                dados = self.infer_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+
+            frame_bgr = dados["frame_bgr"]
+            depth_meters = dados["depth_meters"]
+            verts = dados["verts"]
+            fps = dados["fps"]
+            ts = dados["ts"]
+
+            # Processamento Pesado 3D
+            resultado = detector.processar_frame_3d(depth_meters, verts)
+            mudou, status_anterior = detector.detectou_mudanca_status(resultado.status_estavel)
+
+            # Enviar para a GUI (desenho leve e exibição)
+            self._processar_e_enfileirar(frame_bgr, depth_meters, fps, ts, resultado, mudou, status_anterior, cfg)
+
     def _processar_e_enfileirar(
         self,
         frame_bgr: np.ndarray,
         depth_meters: np.ndarray,
         fps: float,
         ts: str,
-        detector: DetectorCacamba,
+        resultado: ResultadoDeteccao,
+        mudou: bool,
+        status_anterior: Optional[str],
         cfg: dict,
-        verts: Optional[np.ndarray] = None,
     ):
-        """Detecta, desenha overlays e coloca resultado na data_queue."""
-        # Detecção leve sempre ocorre (atualiza históricos)
-        resultado = detector.processar_frame_3d(depth_meters, verts)
-        mudou, status_anterior = detector.detectou_mudanca_status(resultado.status_estavel)
-
-        # Se a fila já está cheia, descartar ANTES de fazer qualquer trabalho pesado
+        """Desenha overlays e coloca resultado final na data_queue."""
+        # Se a fila já está cheia, descartar ANTES de fazer resize
         if self.data_queue.full():
             return
 
