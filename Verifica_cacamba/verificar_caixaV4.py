@@ -794,7 +794,6 @@ class DetectorCacambaGUI:
 
                 mask_roi = (depth_meters > PROFUNDIDADE_MIN_CAIXA) & (depth_meters < PROFUNDIDADE_MAX_CAIXA)
                 mask_uint8 = mask_roi.astype(np.uint8) * 255
-
                 kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (KERNEL_MORPH_SIZE, KERNEL_MORPH_SIZE))
                 mask_uint8 = cv2.morphologyEx(mask_uint8, cv2.MORPH_CLOSE, kernel)
                 mask_uint8 = cv2.morphologyEx(mask_uint8, cv2.MORPH_OPEN, kernel)

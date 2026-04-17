@@ -9,7 +9,7 @@
   },
   "medicoes": {
     "altura_camera_chao": 1.0,
-    "altura_caixa": 0.2,
+    "altura_caixa": 0.1,
     "profundidade_min_caixa": 0.45,
     "profundidade_max_caixa": 0.85,
     "area_minima_pixels": 5000
