@@ -47,8 +47,102 @@ try:
 except ImportError:
     _HAS_REALSENSE = False
 
+try:
+    import open3d as o3d
+
+    _HAS_OPEN3D = True
+except ImportError:
+    _HAS_OPEN3D = False
+
 from config_manager import ConfigManager
 from detector_cacamba import DetectorCacamba, ResultadoDeteccao
+
+
+# ── Visualizador 3D (Open3D) ──────────────────────────────────────────────────
+class Visualizador3DV6:
+    """
+    Encapsula o visualizador 3D do Open3D em uma thread separada.
+    Permite visualizar a nuvem de pontos de forma interativa e gera capturas para a GUI.
+    """
+
+    def __init__(self):
+        self.pcd = o3d.geometry.PointCloud()
+        self.vis = o3d.visualization.Visualizer()
+        self.is_running = False
+        self._data_queue = queue.Queue(maxsize=2)
+        self._preview_queue = queue.Queue(maxsize=1)
+        self._thread = None
+
+    def start(self):
+        if self.is_running:
+            return
+        self.is_running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self.is_running = False
+        if self._thread:
+            self._thread.join(timeout=1.0)
+
+    def atualizar(self, verts, colors=None):
+        if not self.is_running:
+            return
+        try:
+            self._data_queue.put_nowait((verts, colors))
+        except queue.Full:
+            pass
+
+    def get_preview(self) -> Optional[np.ndarray]:
+        try:
+            return self._preview_queue.get_nowait()
+        except queue.Empty:
+            return None
+
+    def _run(self):
+        self.vis.create_window(window_name="3D Viewer - Caçamba V6", width=1024, height=768, visible=True)
+        
+        # Adiciona a nuvem de pontos inicial (vazia)
+        self.vis.add_geometry(self.pcd)
+
+        # Ajustes de renderização
+        opt = self.vis.get_render_option()
+        opt.background_color = np.asarray([0.05, 0.05, 0.05])
+        opt.point_size = 1.0
+        opt.show_coordinate_frame = True
+
+        # Loop de atualização
+        while self.is_running:
+            try:
+                # Tentar obter novos dados
+                verts, colors = self._data_queue.get(timeout=0.03)
+                
+                # Atualizar geometria
+                self.pcd.points = o3d.utility.Vector3dVector(verts)
+                if colors is not None:
+                    self.pcd.colors = o3d.utility.Vector3dVector(colors / 255.0)
+                
+                self.pcd.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+                self.vis.update_geometry(self.pcd)
+
+                # Capturar frame para a GUI (a cada N iterações ou se tiver espaço na fila)
+                if self._preview_queue.empty():
+                    # Captura o buffer da tela como imagem
+                    img = self.vis.capture_screen_float_buffer(do_render=True)
+                    img_np = (np.asarray(img) * 255).astype(np.uint8)
+                    self._preview_queue.put_nowait(img_np)
+
+            except (queue.Empty, Exception):
+                pass
+
+            if not self.vis.poll_events():
+                break
+            self.vis.update_renderer()
+            time.sleep(0.01)
+
+        self.is_running = False
+        self.vis.destroy_window()
+
 
 # ── UI constants ──────────────────────────────────────────────────────────────
 CORES_STATUS = {
@@ -108,6 +202,8 @@ class DetectorCacambaGUIV6:
         self._tempo_inicio: Optional[float] = None
         self._hist_fps: deque = deque(maxlen=30)
         self._multi_view = True
+        self._visualizador_3d: Optional[Visualizador3DV6] = None
+        self._baseline_request = False
 
         # ── Construir interface ────────────────────────────────────────────
         self._criar_interface()
@@ -167,7 +263,7 @@ class DetectorCacambaGUIV6:
         title_row = tk.Frame(top, bg="#1e1e1e")
         title_row.pack()
         tk.Label(
-            title_row, text="🎯 SISTEMA DE DETECÇÃO DE NÍVEL DA CACAMBA V5",
+            title_row, text="🎯 SISTEMA DE DETECÇÃO DE NÍVEL DA CACAMBA V6",
             font=("Arial", 15, "bold"), bg="#1e1e1e", fg="#4CAF50",
         ).pack(side=tk.LEFT)
         if self.simulate:
@@ -194,7 +290,9 @@ class DetectorCacambaGUIV6:
         _btn(btn_row, "📷 TOGGLE VIEW", self._toggle_view, "#795548").grid(row=0, column=3, padx=4)
         _btn(btn_row, "🔧 WIZARD CALIB.", self._abrir_wizard, "#009688").grid(row=0, column=4, padx=4)
         _btn(btn_row, "🔄 RESETAR STATS", self._resetar_estatisticas, "#FF9800").grid(row=0, column=5, padx=4)
-        _btn(btn_row, "❓ AJUDA", self._mostrar_ajuda, "#9C27B0").grid(row=0, column=6, padx=4)
+        _btn(btn_row, "📸 BASELINE 3D", self._capturar_baseline, "#E91E63").grid(row=0, column=6, padx=4)
+        _btn(btn_row, "🖽 VIEW 3D", self._toggle_3d_view, "#2e7d32").grid(row=0, column=7, padx=4)
+        _btn(btn_row, "❓ AJUDA", self._mostrar_ajuda, "#9C27B0").grid(row=0, column=8, padx=4)
 
         # Linha de perfis
         perf_row = tk.Frame(top, bg="#1e1e1e")
@@ -218,20 +316,37 @@ class DetectorCacambaGUIV6:
     # ── Painel de vídeos ──────────────────────────────────────────────────────
 
     def _criar_painel_videos(self, parent):
-        vf = tk.Frame(parent, bg="#2b2b2b")
-        vf.pack(fill=tk.X, padx=4, pady=4)
+        self._vf = tk.Frame(parent, bg="#2b2b2b")
+        self._vf.pack(fill=tk.X, padx=4, pady=4)
 
-        p1 = tk.LabelFrame(vf, text="📹 Color", font=("Arial", 9, "bold"),
+        # Painel Principal (Esquerda): 3D Perspective
+        self._frame_video3 = tk.LabelFrame(self._vf, text="📦 3D VOLUMETRIC VIEW (MAIN SOURCE)",
+                                           font=("Arial", 10, "bold"), bg="#1e1e1e", fg="#2196F3")
+        self._frame_video3.pack(side=tk.LEFT, padx=4)
+        self._lbl_video3 = tk.Label(self._frame_video3, bg="black", width=640, height=480) # Maior
+        self._lbl_video3.pack(padx=3, pady=3)
+
+        # Container para os painéis secundários (Direita)
+        right_vids = tk.Frame(self._vf, bg="#2b2b2b")
+        right_vids.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Painel 1: Color
+        p1 = tk.LabelFrame(right_vids, text="📹 Color/Reference", font=("Arial", 8, "bold"),
                            bg="#1e1e1e", fg="#4CAF50")
-        p1.pack(side=tk.LEFT, padx=4)
-        self._lbl_video1 = tk.Label(p1, bg="black", width=VIDEO_W, height=VIDEO_H)
-        self._lbl_video1.pack(padx=3, pady=3)
+        p1.pack(side=tk.TOP, padx=4, pady=2)
+        self._lbl_video1 = tk.Label(p1, bg="black", width=320, height=240) # Menor
+        self._lbl_video1.pack(padx=2, pady=2)
 
-        self._frame_video2 = tk.LabelFrame(vf, text="🌈 Depth Colormap",
-                                           font=("Arial", 9, "bold"), bg="#1e1e1e", fg="#4CAF50")
-        self._frame_video2.pack(side=tk.LEFT, padx=4)
-        self._lbl_video2 = tk.Label(self._frame_video2, bg="black", width=VIDEO_W, height=VIDEO_H)
-        self._lbl_video2.pack(padx=3, pady=3)
+        # Painel 2: Depth Map
+        self._frame_video2 = tk.LabelFrame(right_vids, text="🌈 Depth/IR Map",
+                                           font=("Arial", 8, "bold"), bg="#1e1e1e", fg="#4CAF50")
+        self._frame_video2.pack(side=tk.TOP, padx=4, pady=2)
+        self._lbl_video2 = tk.Label(self._frame_video2, bg="black", width=320, height=240) # Menor
+        self._lbl_video2.pack(padx=2, pady=2)
+        
+        # Estado inicial do view
+        self._show_3d_preview = True
+        self._multi_view = True
 
     # ── Painel de status ──────────────────────────────────────────────────────
 
@@ -668,6 +783,9 @@ class DetectorCacambaGUIV6:
                 cmd = self.cmd_queue.get_nowait()
                 if cmd.get("tipo") == "update_config":
                     detector.atualizar_config(cmd["cfg"])
+                elif cmd.get("tipo") == "capture_baseline":
+                    # Sinaliza que o próximo frame deve ser usado como referência
+                    self._baseline_request = True
         except queue.Empty:
             pass
 
@@ -693,9 +811,56 @@ class DetectorCacambaGUIV6:
             fps = dados["fps"]
             ts = dados["ts"]
 
+            # Captura de Baseline (se solicitado)
+            if self._baseline_request:
+                sucesso = detector.capture_reference(depth_meters, verts)
+                self._baseline_request = False
+                if sucesso:
+                    self._enqueue_log("✅ Baseline 3D capturada com sucesso!")
+                else:
+                    self._enqueue_log("❌ Falha ao capturar Baseline. Certifique-se que a caçamba está visível.")
+
             # Processamento Pesado 3D
             resultado = detector.processar_frame_3d(depth_meters, verts)
             mudou, status_anterior = detector.detectou_mudanca_status(resultado.status_estavel)
+
+            # Enviar para o Visualizador 3D se estiver ativo
+            if self._visualizador_3d and self._visualizador_3d.is_running:
+                # Criar heatmap de material se tiver baseline
+                colors = None
+                if detector._reference_z is not None:
+                    # Cores baseadas na altura do material
+                    # Reconstruir verts 3D para colorir
+                    h, w = depth_meters.shape
+                    # Pega o bbox para alinhar com a referência
+                    if resultado.bbox:
+                        x1, y1, x2, y2 = resultado.bbox
+                        # Pontos dentro da caçamba ficam verdes/vermelhos dependendo da altura
+                        # Pontos fora ficam cinza
+                        raw_colors = np.full((h * w, 3), 120, dtype=np.float32) # Cinza padrão
+                        
+                        # Calcula diff para a região da caixa
+                        # Precisamos garantir que o shape bate
+                        box_z = depth_meters[y1:y2, x1:x2]
+                        if box_z.shape == detector._reference_z.shape:
+                            diff = detector._reference_z - box_z
+                            # Material > 2cm fica Verde -> Amarelo -> Vermelho
+                            # Mapeamento simples
+                            for i in range(y1, y2):
+                                for j in range(x1, x2):
+                                    idx = i * w + j
+                                    d = detector._reference_z[i-y1, j-x1] - depth_meters[i, j]
+                                    if d > 0.02:
+                                        # Material detectado! Colorir proporcional à altura (0.02 a 0.5m)
+                                        val = min(1.0, d / 0.5)
+                                        raw_colors[idx] = [255 * val, 255 * (1-val), 0]
+                        colors = raw_colors
+                
+                if colors is None:
+                    # Fallback: cores originais ou gradiente de profundidade
+                    colors = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB).reshape(-1, 3) if frame_bgr is not None else None
+                
+                self._visualizador_3d.atualizar(verts, colors)
 
             # Enviar para a GUI (desenho leve e exibição)
             self._processar_e_enfileirar(frame_bgr, depth_meters, fps, ts, resultado, mudou, status_anterior, cfg)
@@ -734,6 +899,7 @@ class DetectorCacambaGUIV6:
             "tipo": "frame",
             "frame_color": frame_rgb,
             "frame_depth": frame_depth_rgb,
+            "frame_3d": self._visualizador_3d.get_preview() if self._visualizador_3d and self._show_3d_preview else None,
             "resultado": resultado,
             "fps": fps,
             "timestamp": ts,
@@ -755,14 +921,24 @@ class DetectorCacambaGUIV6:
         cor = CORES_BGR.get(resultado.status_estavel, (128, 128, 128))
 
         # Header com status
-        cv2.rectangle(frame_bgr, (0, 0), (w, 70), (20, 20, 20), -1)
+        cv2.rectangle(frame_bgr, (0, 0), (w, 75), (20, 20, 20), -1)
         cv2.putText(frame_bgr, f"STATUS: {resultado.status_estavel}",
                     (8, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, cor, 2)
         cv2.putText(
             frame_bgr,
-            f"Dist:{resultado.distancia:.3f}m  Vol:{resultado.volume_material_m3:.4f}m3  {resultado.percentual_volumetrico:.1f}%",
+            f"Dist:{resultado.distancia:.3f}m  Vol:{resultado.volume_material_m3:.3f}m3  {resultado.percentual_volumetrico:.1f}%",
             (8, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (210, 210, 210), 1,
         )
+
+        # Indicador visual de Material Presente (Baseado no 3D)
+        if resultado.material_detectado:
+            cv2.rectangle(frame_bgr, (w-180, 10), (w-10, 45), (0, 255, 0), -1)
+            cv2.putText(frame_bgr, "MATERIAL OK", (w-170, 35), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+        else:
+            cv2.rectangle(frame_bgr, (w-180, 10), (w-10, 45), (0, 0, 255), -1)
+            cv2.putText(frame_bgr, "VAZIA", (w-145, 35), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
         # Bounding box e grid
         if resultado.bbox:
@@ -869,7 +1045,7 @@ class DetectorCacambaGUIV6:
             }
             self._hist_completo.append(record)
 
-            self._atualizar_videos(msg["frame_color"], msg["frame_depth"])
+            self._atualizar_videos(msg["frame_color"], msg["frame_depth"], msg.get("frame_3d"))
             self._atualizar_status_panel(resultado, fps)
             self._desenhar_grafico()
             self._atualizar_stats()
@@ -909,8 +1085,10 @@ class DetectorCacambaGUIV6:
     # ATUALIZAÇÕES DA GUI
     # =========================================================================
 
-    def _atualizar_videos(self, frame_color_rgb: np.ndarray, frame_depth_rgb: Optional[np.ndarray]):
+    def _atualizar_videos(self, frame_color_rgb: np.ndarray, frame_depth_rgb: Optional[np.ndarray], frame_3d_rgb: Optional[np.ndarray] = None):
         def _show(label, arr):
+            if arr is None:
+                return
             # BILINEAR é ~4x mais rápido que LANCZOS sem perda perceptível em vídeo ao vivo
             img = Image.fromarray(arr).resize((VIDEO_W, VIDEO_H), Image.Resampling.BILINEAR)
             img_tk = ImageTk.PhotoImage(image=img)
@@ -920,6 +1098,9 @@ class DetectorCacambaGUIV6:
         _show(self._lbl_video1, frame_color_rgb)
         if self._multi_view and frame_depth_rgb is not None:
             _show(self._lbl_video2, frame_depth_rgb)
+        
+        if self._show_3d_preview and frame_3d_rgb is not None:
+            _show(self._lbl_video3, frame_3d_rgb)
 
     def _atualizar_status_panel(self, resultado: ResultadoDeteccao, fps: float):
         cor = CORES_STATUS.get(resultado.status_estavel, "#808080")
@@ -1176,6 +1357,32 @@ class DetectorCacambaGUIV6:
             self._frame_video2.pack_forget()
             self._adicionar_log("📷 Single-view ativado (somente Color).")
 
+    def _toggle_3d_view(self):
+        if not _HAS_OPEN3D:
+            messagebox.showerror("Erro", "Open3D não encontrado. Instale com: pip install open3d")
+            return
+
+        if self._visualizador_3d is None:
+            self._visualizador_3d = Visualizador3DV6()
+            self._visualizador_3d.start()
+            self._adicionar_log("🖽 Visualizador 3D aberto.")
+        else:
+            if self._visualizador_3d.is_running:
+                self._visualizador_3d.stop()
+                self._visualizador_3d = None
+                self._adicionar_log("🖽 Visualizador 3D fechado.")
+            else:
+                self._visualizador_3d.start()
+                self._adicionar_log("🖽 Visualizador 3D reiniciado.")
+
+    def _capturar_baseline(self):
+        if not self._camera_ativa:
+            messagebox.showwarning("Aviso", "Inicie a câmera primeiro.")
+            return
+        if messagebox.askyesno("Baseline 3D", "Deseja capturar o estado atual como BASELINE (caçamba vazia)?\nIsso aumentará muito a precisão volumétrica."):
+            self.cmd_queue.put({"tipo": "capture_baseline"})
+            self._adicionar_log("📸 Solicitação de captura de Baseline enviada.")
+
     # ── Wizard de calibração ──────────────────────────────────────────────────
 
     def _abrir_wizard(self):
@@ -1226,6 +1433,8 @@ Versão: 6.0
 """)
 
     def fechar_aplicacao(self):
+        if self._visualizador_3d:
+            self._visualizador_3d.stop()
         if self._camera_ativa:
             self._parar_camera()
         self.root.quit()
